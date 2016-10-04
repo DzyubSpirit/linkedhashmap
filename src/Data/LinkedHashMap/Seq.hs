@@ -70,14 +70,15 @@ import qualified Data.Traversable as T
 import qualified Data.List as L
 import qualified Data.HashMap.Strict as M
 
-data Entry a = Entry {-# UNPACK #-}!Int a deriving (Show)
-data MaybePair k v = NothingPair | JustPair k v deriving (Show)
+data Entry a = Entry {-# UNPACK #-}!Int a deriving (Eq, Show)
+data MaybePair k v = NothingPair | JustPair k v deriving (Eq, Show)
 
 -- Contains HashMap, ordered keys Seq and number of not deleted keys in a sequence (size of HashMap)
 data LinkedHashMap k v = LinkedHashMap (M.HashMap k (Entry v)) (Seq (MaybePair k v)) {-# UNPACK #-}!Int
+  deriving (Eq)
 
 instance (Show k, Show v) => Show (LinkedHashMap k v) where
-    showsPrec d m@(LinkedHashMap _ _ _) = showParen (d > 10) $
+    showsPrec d m@LinkedHashMap{} = showParen (d > 10) $
       showString "fromList " . shows (toList m)
 
 -- | /O(log n)/ Return the value to which the specified key is mapped,
@@ -101,7 +102,7 @@ fromList :: (Eq k, Hashable k) => [(k, v)] -> LinkedHashMap k v
 fromList ps = LinkedHashMap m' s' len'
   where
     m0 = M.fromList $ L.map (\(i, (k, v)) -> (k, Entry i v)) $ zip [0..] ps
-    s0 = S.fromList $ L.map (\(k, v) -> JustPair k v) ps
+    s0 = S.fromList $ L.map (uncurry JustPair) ps
     len = M.size m0
     (m', s', len') = if len == S.length s0
                      then (m0, s0, len)
@@ -183,21 +184,21 @@ lookupDefault def k t = case lookup k t of
 -- | /O(log n)/ Return the value to which the specified key is mapped.
 -- Calls 'error' if this map contains no mapping for the key.
 (!) :: (Eq k, Hashable k) => LinkedHashMap k v -> k -> v
-(!) m k = case lookup k m of
-    Just v  -> v
-    Nothing -> error "Data.LinkedHashMap.Seq.(!): key not found"
+(!) m k = fromMaybe
+        ( error "Data.LinkedHashMap.Seq.(!): key not found" )
+        ( lookup k m )
 {-# INLINABLE (!) #-}
 
 -- | /O(n)/ Return a list of this map's keys.  The list is produced
 -- lazily.
 keys :: (Eq k, Hashable k) => LinkedHashMap k v -> [k]
-keys m = L.map (\(k, _) -> k) $ toList m
+keys m = L.map fst $ toList m
 {-# INLINE keys #-}
 
 -- | /O(n)/ Return a list of this map's values.  The list is produced
 -- lazily.
 elems :: (Eq k, Hashable k) => LinkedHashMap k v -> [v]
-elems m = L.map (\(_, v) -> v) $ toList m
+elems m = L.map snd $ toList m
 {-# INLINE elems #-}
 
 -- | /O(log n)/ Associate the value with the key in this map.  If
@@ -256,7 +257,7 @@ map f = mapWithKey (const f)
 
 -- | /O(n)/ Transform this map by applying a function to every value.
 mapWithKey :: (k -> v1 -> v2) -> LinkedHashMap k v1 -> LinkedHashMap k v2
-mapWithKey f (LinkedHashMap m s n) = (LinkedHashMap m' s' n)
+mapWithKey f (LinkedHashMap m s n) = LinkedHashMap m' s' n
   where
     m' = M.mapWithKey f' m
     s' = fmap f'' s
@@ -271,7 +272,7 @@ traverseWithKey :: Applicative f => (k -> v1 -> f v2) -> LinkedHashMap k v1
 traverseWithKey f (LinkedHashMap m0 s0 n) = (\s -> LinkedHashMap (M.map (getV2 s) m0) s n) <$> s'
   where
     s' = T.traverse f' s0
-    f' (JustPair k v1) = (\v -> JustPair k v) <$> f k v1
+    f' (JustPair k v1) = JustPair k <$> f k v1
     f' NothingPair = pure NothingPair
     getV2 s (Entry ix _) = let JustPair _ v2 = S.index s ix in Entry ix v2
 
