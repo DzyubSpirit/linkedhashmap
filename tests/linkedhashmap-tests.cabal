@@ -19,7 +19,7 @@ executable linkedhashmap-tests
   main-is:             Main.hs
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8
+  build-depends:       base >=4.9 && <4.10
                      , containers >= 0.5.5.1
                      , hashable >= 1.2.2.0
                      , tasty >= 0.10.0.2

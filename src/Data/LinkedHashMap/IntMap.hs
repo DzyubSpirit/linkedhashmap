@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 module Data.LinkedHashMap.IntMap
     (
      LinkedHashMap(..)
@@ -18,8 +17,7 @@ module Data.LinkedHashMap.IntMap
     , insertWith
     , delete
     , adjust
-
-      -- * Combine
+-- * Combine
       -- ** Union
     , union
     , unionWith
@@ -67,13 +65,16 @@ import qualified Data.Traversable as T
 import qualified Data.HashMap.Strict as M
 import qualified Data.IntMap.Strict as IM
 
-data Entry a = Entry {-# UNPACK #-}!Int a deriving (Show)
+data Entry a = Entry {-# UNPACK #-}!Int a deriving (Eq, Show)
 
 data LinkedHashMap k v = LinkedHashMap (M.HashMap k (Entry v)) (IM.IntMap (k, v)) {-# UNPACK #-}!Int
 
 instance (Show k, Show v) => Show (LinkedHashMap k v) where
-    showsPrec d m@(LinkedHashMap _ _ _) = showParen (d > 10) $
+    showsPrec d m@LinkedHashMap{} = showParen (d > 10) $
       showString "fromList " . shows (toList m)
+
+instance (Eq k, Eq v) => Eq (LinkedHashMap k v) where
+  LinkedHashMap a b c == LinkedHashMap d e f = a == d && b == e && c == f
 
 -- | /O(log n)/ Return the value to which the specified key is mapped,
 -- or 'Nothing' if this map contains no mapping for the key.
@@ -96,9 +97,9 @@ lookupDefault def k t = case lookup k t of
 -- | /O(log n)/ Return the value to which the specified key is mapped.
 -- Calls 'error' if this map contains no mapping for the key.
 (!) :: (Eq k, Hashable k) => LinkedHashMap k v -> k -> v
-(!) m k = case lookup k m of
-    Just v  -> v
-    Nothing -> error "Data.LinkedHashMap.IntMap.(!): key not found"
+(!) m k = fromMaybe
+        ( error "Data.LinkedHashMap.IntMap.(!): key not found" )
+        ( lookup k m )
 {-# INLINABLE (!) #-}
 
 -- | /O(log n)/ Remove the mapping for the specified key from this map
@@ -135,13 +136,13 @@ size (LinkedHashMap _ s _) = IM.size s
 -- | /O(n)/ Return a list of this map's keys.  The list is produced
 -- lazily.
 keys :: (Eq k, Hashable k) => LinkedHashMap k v -> [k]
-keys m = fmap (\(k, _) -> k) $ toList m
+keys m = fst <$> toList m
 {-# INLINE keys #-}
 
 -- | /O(n)/ Return a list of this map's values.  The list is produced
 -- lazily.
 elems :: (Eq k, Hashable k) => LinkedHashMap k v -> [v]
-elems m = fmap (\(_, v) -> v) $ toList m
+elems m = snd <$> toList m
 {-# INLINE elems #-}
 
 -- | /O(n*log n)/ Construct a map with the supplied mappings.  If the
@@ -222,7 +223,7 @@ map f = mapWithKey (const f)
 
 -- | /O(n)/ Transform this map by applying a function to every value.
 mapWithKey :: (k -> v1 -> v2) -> LinkedHashMap k v1 -> LinkedHashMap k v2
-mapWithKey f (LinkedHashMap m s maxn) = (LinkedHashMap m' s' maxn)
+mapWithKey f (LinkedHashMap m s maxn) = LinkedHashMap m' s' maxn
   where
     m' = M.mapWithKey f' m
     s' = fmap f'' s
@@ -306,7 +307,7 @@ foldlWithKey' f b0 (LinkedHashMap _ s _) = F.foldl' f' b0 s
 foldrWithKey :: (k -> v -> a -> a) -> a -> LinkedHashMap k v -> a
 foldrWithKey f b0 (LinkedHashMap _ s _) = F.foldr f' b0 s
   where
-    f' (k, v) b = f k v b
+    f' = uncurry f
 
 -- | /O(n*log(n))/ Filter this map by retaining only elements satisfying a
 -- predicate.
@@ -337,7 +338,7 @@ instance Functor (LinkedHashMap k) where
 instance F.Foldable (LinkedHashMap k) where
     foldr f b0 (LinkedHashMap _ s _) = F.foldr f' b0 s
       where
-        f' (_, v) b = f v b
+        f' = f . snd
         
 instance T.Traversable (LinkedHashMap k) where
     traverse f = traverseWithKey (const f)
